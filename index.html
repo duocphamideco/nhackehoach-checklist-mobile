@@ -1,0 +1,1092 @@
+<!doctype html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#762de5"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="IDECO Nhắc việc"><link rel="icon" href="./icon.svg" type="image/svg+xml"><title>IDECO | Kế hoạch tuần – Checklist – Nhắc việc</title><style>
+:root{font-family:system-ui,-apple-system,Arial;background:#f5f3ff;color:#242038}*{box-sizing:border-box}body{margin:0}header{background:linear-gradient(110deg,#6725d0,#9b3df1);color:white;padding:20px 18px 88px}header b{font-size:21px}header p{margin:7px 0 0;font-size:13px;opacity:.95}main{max-width:900px;margin:-55px auto 30px;padding:0 15px}.panel{background:white;border:1px solid #eadfff;border-radius:18px;padding:18px;margin:0 0 14px;box-shadow:0 8px 30px #4c1d9520}h2{margin:0 0 9px;font-size:18px}.muted{font-size:13px;color:#64748b;line-height:1.5}button,select{font:inherit}button{background:#7929ed;color:white;border:0;border-radius:12px;min-height:45px;padding:10px 15px;font-weight:700;cursor:pointer}button:disabled{background:#a3a3a3}select{width:100%;min-height:45px;border:1px solid #c4b5fd;border-radius:10px;padding:9px;background:white;margin:9px 0}.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.outline{color:#6d28d9;background:#ede9fe}.status{padding:10px;border-radius:10px;background:#f5f3ff;font-size:13px;white-space:pre-wrap}.hint{font-size:12px;color:#655a76}#openWidget{font-size:16px}.steps{line-height:1.8;font-size:14px;padding-left:24px}#guideAndroid,#guideIOS{display:none}@media(max-width:620px){header{padding-bottom:78px}.panel{padding:15px}main{margin-top:-52px}header b{font-size:18px}}
+</style></head><body><header><b>📆 IDECO PHARMA – KẾ HOẠCH & NHẮC VIỆC</b><p>Kế hoạch tuần • Checklist nhân viên • Lịch nhắc đồng bộ Firebase</p></header><main><section class="panel"><h2>📋 Bảng kế hoạch tuần</h2><p class="muted">Dữ liệu lấy trực tiếp từ hệ thống IDECO đang sử dụng. Chọn nút bên dưới hoặc biểu tượng tím để xem và đặt nhắc.</p><button id="openWidget">🔔 Mở kế hoạch – Checklist – Nhắc việc</button><p class="hint">Nút tím nổi ở cạnh màn hình là widget gốc được tách từ file chuẩn 2.4.0.</p></section><section class="panel"><h2>📲 Bật thông báo trên điện thoại</h2><p class="muted">Chọn tên nhân viên để chỉ nhận thông báo của mình. Bản một file chỉ nhắc khi trang đang mở; muốn nhắc khi đóng cần thêm dịch vụ Web Push.</p><label for="employee">Nhân viên nhận nhắc</label><select id="employee"><option value="">Đang tải danh sách nhân viên…</option></select><div class="row"><button id="enablePush">🔔 Đăng ký thông báo nền</button><button class="outline" id="testLocal">🧪 Thử thông báo trên máy</button></div><p class="status" id="status">Đang kiểm tra trình duyệt…</p><p class="hint">Bản một file không hỗ trợ thông báo tự động khi đóng ứng dụng. Để nhắc nền cần bổ sung service worker, manifest và máy chủ gửi Push.</p></section><section class="panel"><h2>⚙️ Cài ứng dụng trên màn hình chính</h2><div id="guideIOS"><b>iPhone / iPad (Safari)</b><ol class="steps"><li>Bấm Chia sẻ → Thêm vào Màn hình chính.</li><li>Mở ứng dụng từ biểu tượng vừa tạo.</li><li>Chọn tên → Bật thông báo → Cho phép.</li></ol></div><div id="guideAndroid"><b>Android (Chrome)</b><ol class="steps"><li>Bấm menu ⋮ → Cài đặt ứng dụng / Thêm vào màn hình chính.</li><li>Mở app → chọn tên → Bật thông báo → Cho phép.</li></ol></div><p class="muted">Khi ứng dụng đang mở, widget gốc kiểm tra lịch và hiện popup. Nếu tắt ứng dụng, GitHub Pages và HTML đơn lẻ không thể tự chạy lịch gửi Push.</p></section></main><script type="module">
+
+/* ============================================================================
+ *  WIDGET "KẾ HOẠCH TUẦN" –  IDECO LẬP KẾ HOẠCH TUẦN MÀU TÍM bổ trợ cho ứng dụng LẬP KẾ HOẠCH TUẦN (IDECO)
+ *  - Icon tím góc trên phải -> dropdown danh sách nhân viên (TUẦN GẦN NHẤT)
+ *  - Bấm "Xem" -> popup BẢNG KẾ HOẠCH TUẦN (Thứ 2..Thứ 7 + mục tiêu tuần)
+ *  - Mỗi công việc có nút "Nhắc việc" (đặt ngày + giờ)
+ *  - Tới giờ: popup nhắc theo mục tiêu tuần + Web Notification + chuông
+ *  KHÔNG chạm id / class / CSS của trang nhúng (Shadow DOM isolation)
+ * ==========================================================================*/
+(async () => {
+  'use strict';
+  if (window.__IDECO_KEHOACH_WIDGET__) return;
+  window.__IDECO_KEHOACH_WIDGET__ = true;
+
+  /* ---------------------------------------------------------------- CONFIG */
+  const FB_CONFIG = {
+    apiKey: "AIzaSyCNsKk3vZSbfOcbZv1dCHISTXep2njHOiM",
+    authDomain: "kehoachnew-532cf.firebaseapp.com",
+    databaseURL: "https://kehoachnew-532cf-default-rtdb.firebaseio.com",
+    projectId: "kehoachnew-532cf",
+    storageBucket: "kehoachnew-532cf.firebasestorage.app",
+    messagingSenderId: "124344092261",
+    appId: "1:124344092261:web:90c6ba3edcdd45a2f6a88c"
+  };
+  const APP_NAME    = "KEHOACH_WIDGET";
+  const NODE_PLANS  = "weekly_plans";            // CHỈ ĐỌC
+  const NODE_REMIND = "plan_task_reminders";     // node riêng của widget
+  const NODE_CLREM  = "checklist_reminders";     // node riêng: nhắc CHECKLIST
+  const LS_FIRED    = "ideco_kh_fired_v1";
+  const LS_POS      = "ideco_kh_pos_v1";
+  const LS_DEVICE   = "ideco_kh_device_v1";
+  const CATCHUP_MS  = 12 * 60 * 60 * 1000;
+  const TICK_MS     = 15000;
+  const PLAN_KEY    = "__MUCTIEUTUAN__";
+  const ALERT_TEXT  = "BẠN CÓ CÔNG VIỆC CẦN TRIỂN KHAI THEO MỤC TIÊU TUẦN NÀY HÃY VÀO XEM LẠI-NHỚ XEM NÓ CÓ PHỤC VỤ MỤC TIÊU ĐỀ RA KHÔNG NHÉ! HAY CHỈNH LẠI";
+  const CL_KEY      = "__TOANBOCHECKLIST__";
+  const ALERT_CL    = "PHẦN CHECKLIST VIỆC NÀY CỦA BẠN ĐẾN HẸN ĐÃ LÀM RỒI ĐÓ- NHỚ KIỂM TRA LẠI";
+  const DAY_ORDER   = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"];
+
+  /* ------------------------------------------------------------- FIREBASE */
+  const V = "10.12.2";
+  let db, R;
+  try {
+    const appMod = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
+    const dbMod  = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-database.js`);
+    const exist  = appMod.getApps().find(a => a.name === APP_NAME);
+    db = dbMod.getDatabase(exist || appMod.initializeApp(FB_CONFIG, APP_NAME));
+    R  = dbMod;
+  } catch (e) {
+    console.error("[KẾ HOẠCH WIDGET] Không tải được Firebase:", e);
+    return;
+  }
+
+  /* --------------------------------------------------------------- HELPERS */
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  const toArr = v => Array.isArray(v) ? v.filter(Boolean) : (v && typeof v === "object" ? Object.values(v).filter(Boolean) : []);
+  const pad = n => String(n).padStart(2, "0");
+  const D = s => { const x = new Date(s); return isNaN(x) ? null : x; };
+  const fmtDate = s => { const x = D(s); return x ? `${pad(x.getDate())}/${pad(x.getMonth()+1)}/${x.getFullYear()}` : "—"; };
+  const fmtShort = s => { const x = D(s); return x ? `${pad(x.getDate())}/${pad(x.getMonth()+1)}` : "—"; };
+  const fmtDT = s => { const x = D(s); return x ? `${pad(x.getDate())}/${pad(x.getMonth()+1)}/${x.getFullYear()} lúc ${pad(x.getHours())}:${pad(x.getMinutes())}` : "—"; };
+  const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+  const nowHM = () => { const d = new Date(Date.now() + 5*60000); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const noAcc = s => String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D").toLowerCase().trim();
+  const lsGet = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+  let DEVICE_ID = lsGet(LS_DEVICE, null);
+  if (!DEVICE_ID) { DEVICE_ID = "dev_" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); lsSet(LS_DEVICE, DEVICE_ID); }
+
+  function beep() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      const ac = new AC();
+      [0, .35, .7].forEach(off => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.connect(g); g.connect(ac.destination); o.type = "sine"; o.frequency.value = 880;
+        g.gain.setValueAtTime(.0001, ac.currentTime + off);
+        g.gain.exponentialRampToValueAtTime(.22, ac.currentTime + off + .02);
+        g.gain.exponentialRampToValueAtTime(.0001, ac.currentTime + off + .3);
+        o.start(ac.currentTime + off); o.stop(ac.currentTime + off + .32);
+      });
+    } catch {}
+  }
+
+  /* ---------------------------------------------------- CHUẨN HÓA DỮ LIỆU */
+  function planTasks(p) {
+    const out = [];
+    const days = p.days && typeof p.days === "object" ? p.days : {};
+    const names = Object.keys(days).sort((a, b) => {
+      const ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    names.forEach(dn => {
+      const d = days[dn] || {};
+      toArr(d.tasks).forEach((t, i) => out.push({ day: dn, date: d.date, idx: i, t }));
+    });
+    return out;
+  }
+  function planStats(p) {
+    const all = planTasks(p);
+    const done = all.filter(x => x.t.isCompleted).length;
+    return { total: all.length, done, pct: all.length ? Math.round(done / all.length * 100) : 0 };
+  }
+  /* Chỉ giữ kế hoạch tuần GẦN NHẤT của mỗi nhân viên */
+  function latestPerEmployee(list) {
+    const map = new Map();
+    list.forEach(p => {
+      const k = noAcc(p.employeeName) || ("__" + p.id);
+      const cur = map.get(k);
+      if (!cur) { map.set(k, p); return; }
+      const a = D(p.creationDate), b = D(cur.creationDate);
+      const ta = a ? a.getTime() : -1, tb = b ? b.getTime() : -1;
+      if (ta > tb || (ta === tb && String(p.id) > String(cur.id))) map.set(k, p);
+    });
+    return Array.from(map.values());
+  }
+
+  /* ------------------------------------------------------------ SHADOW DOM */
+  const host = document.createElement("div");
+  host.setAttribute("data-ideco-kehoach-widget", "1");
+  host.setAttribute("style", "position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;z-index:2147483000!important;");
+  (document.body || document.documentElement).appendChild(host);
+  const root = (window.__idecoCompactRoot||function(r){return r;})(host.attachShadow({ mode: "open" }));
+
+  root.innerHTML = `
+<style>
+  :host{all:initial}
+  *,*::before,*::after{box-sizing:border-box}
+  .kh,.kh *{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;margin:0;padding:0}
+  button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+  input,select,textarea{font:inherit;color:inherit}
+
+  /* ---------- NÚT NỔI ---------- */
+  .fab{position:fixed;display:flex;align-items:center;gap:8px;
+    background:linear-gradient(135deg,#7c3aed 0%,#a855f7 55%,#6d28d9 100%);
+    color:#fff;padding:0 16px;height:44px;border-radius:12px;font-weight:800;font-size:13.5px;letter-spacing:.4px;
+    box-shadow:0 8px 22px rgba(109,40,217,.42);user-select:none;transition:transform .18s,box-shadow .18s;z-index:2147483001}
+  .fab:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(109,40,217,.55)}
+  .fab:active{transform:scale(.96)}
+  .fab .ic{font-size:17px;line-height:1}
+  .fab .grip{opacity:.55;font-size:14px;cursor:move;margin-left:2px}
+  .badge{position:absolute;top:-7px;left:-7px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:#ef4444;
+    color:#fff;font-size:11px;font-weight:800;display:none;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+  .badge.on{display:flex}
+
+  /* ---------- DROPDOWN ---------- */
+  .dd{position:fixed;width:680px;max-width:calc(100vw - 24px);background:#fff;border-radius:16px;
+    box-shadow:0 24px 60px rgba(0,0,0,.28);border:1px solid #e9d5ff;display:none;flex-direction:column;overflow:hidden;
+    z-index:2147483001;animation:pop .16s ease-out}
+  .dd.on{display:flex}
+  @keyframes pop{from{opacity:0;transform:translateY(-8px) scale(.985)}to{opacity:1;transform:none}}
+  .dd-h{background:linear-gradient(135deg,#6d28d9,#9333ea);color:#fff;padding:13px 16px;display:flex;align-items:center;gap:10px}
+  .dd-h b{font-size:13.5px;letter-spacing:.3px;line-height:1.35;display:block}
+  .dd-h .sub{font-size:11.5px;opacity:.85;font-weight:500}
+  .dd-h .x{margin-left:auto;width:28px;height:28px;border-radius:8px;background:rgba(255,255,255,.16);font-size:16px;line-height:26px;text-align:center;flex:0 0 auto}
+  .dd-h .x:hover{background:rgba(255,255,255,.3)}
+  .tabs{display:flex;gap:6px;padding:9px 12px 0;background:#faf5ff}
+  .tab{flex:1;padding:8px 6px;border-radius:9px 9px 0 0;font-size:12.5px;font-weight:700;color:#6b7280;text-align:center}
+  .tab.on{background:#fff;color:#6d28d9;box-shadow:0 -2px 6px rgba(0,0,0,.05)}
+  .tools{display:flex;gap:8px;padding:10px 12px;border-bottom:1px solid #f3e8ff;align-items:center}
+  .srch{flex:1;padding:8px 11px;border:1px solid #e5e7eb;border-radius:9px;font-size:13px;outline:none}
+  .srch:focus{border-color:#a855f7;box-shadow:0 0 0 3px rgba(168,85,247,.15)}
+  .chk{display:flex;align-items:center;gap:5px;font-size:11.5px;color:#6b7280;font-weight:600;white-space:nowrap;cursor:pointer}
+  .body{overflow-y:auto;padding:6px 0 10px}
+  .body::-webkit-scrollbar{width:8px}.body::-webkit-scrollbar-thumb{background:#ddd6fe;border-radius:8px}
+
+  table{width:100%;border-collapse:collapse}
+  thead th{position:sticky;top:0;background:#f5f3ff;color:#5b21b6;font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;
+    padding:8px 10px;text-align:left;border-bottom:1px solid #ede9fe;z-index:1}
+  tbody td{padding:9px 10px;border-bottom:1px solid #f5f3ff;font-size:13px;vertical-align:middle}
+  tbody tr:hover{background:#faf5ff}
+  .nm{font-weight:700;color:#111827;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .dt{font-size:11px;color:#9ca3af;margin-top:2px}
+  .tagw{background:#ede9fe;color:#6d28d9;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:20px;letter-spacing:.3px}
+  .dep{display:inline-block;padding:2.5px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .dep.kd{background:#dbeafe;color:#1d4ed8}.dep.kt{background:#fef3c7;color:#b45309}
+  .dep.kv{background:#dcfce7;color:#15803d}.dep.na{background:#f3f4f6;color:#6b7280}
+  .prog{width:120px}
+  .bar{height:7px;background:#e5e7eb;border-radius:6px;overflow:hidden}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,#8b5cf6,#22c55e);border-radius:6px;transition:width .5s}
+  .ptxt{font-size:10.5px;color:#6b7280;font-weight:700;margin-top:3px}
+  .btn-v{background:#7c3aed;color:#fff;padding:6px 15px;border-radius:8px;font-size:12px;font-weight:700;box-shadow:0 2px 6px rgba(124,58,237,.3)}
+  .btn-v:hover{background:#6d28d9}
+  .btn-v:disabled{background:#e5e7eb;color:#9ca3af;box-shadow:none;cursor:not-allowed}
+  .empty{padding:34px 16px;text-align:center;color:#9ca3af;font-size:13px;font-style:italic}
+  .bell-mini{font-size:11px;color:#d97706;font-weight:800}
+
+  /* ---------- OVERLAY / MODAL ---------- */
+  .ov{position:fixed;inset:0;background:rgba(17,24,39,.62);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;padding:18px;z-index:2147483002}
+  .ov.on{display:flex}
+  .md{background:#f9fafb;width:100%;max-width:960px;max-height:93vh;border-radius:18px;overflow:hidden;display:flex;flex-direction:column;
+    box-shadow:0 30px 70px rgba(0,0,0,.4);animation:pop .18s ease-out}
+  .md-h{background:linear-gradient(135deg,#6d28d9,#a855f7);color:#fff;padding:15px 20px;display:flex;align-items:center;gap:12px}
+  .md-h .av{width:40px;height:40px;border-radius:11px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 auto}
+  .md-h h3{font-size:16px;font-weight:800}
+  .md-h .s{font-size:11.5px;opacity:.9;margin-top:2px}
+  .md-h .hb{margin-left:auto;display:flex;gap:8px;align-items:center;flex:0 0 auto}
+  .md-h .rmall{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);padding:7px 13px;border-radius:9px;font-size:11.5px;font-weight:800;white-space:nowrap}
+  .md-h .rmall:hover{background:rgba(255,255,255,.32)}
+  .md-h .x{width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.16);font-size:18px;line-height:30px;text-align:center}
+  .md-h .x:hover{background:rgba(255,255,255,.3)}
+  .md-b{padding:18px 20px 24px;overflow-y:auto;background:#f9fafb}
+  .md-b::-webkit-scrollbar{width:9px}.md-b::-webkit-scrollbar-thumb{background:#ddd6fe;border-radius:8px}
+
+  .obj{background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ddd6fe;border-left:5px solid #7c3aed;border-radius:14px;padding:14px 17px;margin-bottom:14px}
+  .obj .lb{font-size:10.5px;font-weight:800;color:#6d28d9;letter-spacing:.7px;text-transform:uppercase;margin-bottom:6px}
+  .obj .tx{font-size:13.5px;color:#312e81;line-height:1.65;white-space:pre-wrap;font-weight:600}
+  .pw{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:13px 16px;margin-bottom:16px}
+  .pw .r{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+  .pw .r span:first-child{font-size:12.5px;font-weight:600;color:#374151}
+  .pw .r span:last-child{font-size:13px;font-weight:800;color:#2563eb}
+  .pw .bar{height:10px}.pw .bar>i{background:#2563eb}
+
+  /* ---------- BẢNG KẾ HOẠCH THEO NGÀY ---------- */
+  .day{background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:14px}
+  .day-h{background:#f9fafb;border-bottom:1px solid #e5e7eb;padding:11px 16px;display:flex;align-items:center;gap:10px}
+  .day-h h4{font-size:14.5px;font-weight:800;color:#1f2937}
+  .day-h .dd2{font-size:11.5px;color:#6b7280;font-weight:600}
+  .day-h .cnt{margin-left:auto;font-size:11px;font-weight:800;color:#6d28d9;background:#f3e8ff;padding:3px 10px;border-radius:20px}
+  .day-b{padding:10px 12px}
+  .tk{border:1px solid #e5e7eb;border-left:4px solid #d1d5db;border-radius:10px;padding:12px 14px;margin-bottom:9px;display:flex;gap:12px;align-items:flex-start;transition:.2s}
+  .tk:last-child{margin-bottom:0}
+  .tk:hover{box-shadow:0 4px 14px rgba(124,58,237,.1);border-color:#c4b5fd}
+  .tk.done{background:#f0fdf4;border-left-color:#22c55e}
+  .tk.cont{background:#fefce8;border-left-color:#eab308}
+  .tk.rem{border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.12)}
+  .tk .no{flex:0 0 auto;width:24px;height:24px;border-radius:7px;background:#f3e8ff;color:#6d28d9;font-size:11.5px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .tk.done .no{background:#22c55e;color:#fff}
+  .tk .ct{flex:1;min-width:0}
+  .tk .tn{font-size:13.5px;font-weight:700;color:#1f2937;line-height:1.55;word-break:break-word}
+  .tk.done .tn{color:#166534;text-decoration:line-through;opacity:.8}
+  .tk .ln{font-size:12px;color:#4b5563;line-height:1.6;margin-top:5px;white-space:pre-wrap;word-break:break-word}
+  .tk .ln b{color:#374151}
+  .tk .ln.rp{color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:6px 9px;font-weight:600}
+  .tk .st{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+  .pill{font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px}
+  .pill.g{background:#22c55e;color:#fff}.pill.y{background:#eab308;color:#fff}
+  .pill.o{background:#f1f5f9;color:#64748b}.pill.w{background:#fef3c7;color:#b45309;border:1px solid #fcd34d}
+  .pill.d{background:#eff6ff;color:#1d4ed8}
+  .act{flex:0 0 auto;display:flex;flex-direction:column;gap:6px}
+  .bt{padding:6px 12px;border-radius:8px;font-size:11.5px;font-weight:700;white-space:nowrap;border:1px solid transparent}
+  .bt.p{background:#7c3aed;color:#fff}.bt.p:hover{background:#6d28d9}
+  .bt.o{background:#fff;color:#b45309;border-color:#fcd34d}.bt.o:hover{background:#fffbeb}
+  .bt.r{background:#fff;color:#dc2626;border-color:#fecaca}.bt.r:hover{background:#fef2f2}
+
+  /* form đặt nhắc */
+  .rf{margin-top:11px;background:#fffbeb;border:1px solid #fcd34d;border-radius:11px;padding:13px 14px}
+  .rf .t{font-size:11.5px;font-weight:800;color:#92400e;margin-bottom:9px;letter-spacing:.3px}
+  .rf .g{display:flex;flex-wrap:wrap;gap:9px;align-items:flex-end}
+  .fg{display:flex;flex-direction:column;gap:4px}
+  .fg label{font-size:10.5px;font-weight:700;color:#78350f;letter-spacing:.3px}
+  .fg input,.fg select{padding:7px 10px;border:1px solid #fcd34d;border-radius:8px;font-size:12.5px;background:#fff;outline:none}
+  .fg input:focus,.fg select:focus{border-color:#d97706;box-shadow:0 0 0 3px rgba(217,119,6,.15)}
+  .rf .sv{background:#d97706;color:#fff;padding:8px 17px;border-radius:8px;font-size:12px;font-weight:800}
+  .rf .sv:hover{background:#b45309}
+  .rf .pv{background:#7c3aed;color:#fff;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:800}
+  .rf .pv:hover{background:#6d28d9}
+  .rf .cc{background:#fff;color:#78350f;border:1px solid #fcd34d;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:700}
+  .rf .hint{font-size:10.5px;color:#92400e;margin-top:8px;line-height:1.5;opacity:.85}
+
+  /* ---------- POPUP NHẮC VIỆC ---------- */
+  /* ---------- TAB CHECKLIST ---------- */
+  .btn-c{background:#9333ea;color:#fff;padding:6px 13px;border-radius:8px;font-size:11.5px;font-weight:700;box-shadow:0 2px 6px rgba(147,51,234,.3);white-space:nowrap}
+  .btn-c:hover{background:#7e22ce}
+  .btn-c:disabled{background:#e5e7eb;color:#9ca3af;box-shadow:none;cursor:not-allowed}
+  .tagc{background:#fae8ff;color:#a21caf;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:20px;letter-spacing:.3px}
+  .clsum{background:linear-gradient(135deg,#faf5ff,#fdf4ff);border:1px solid #e9d5ff;border-left:5px solid #a855f7;border-radius:14px;padding:14px 17px;margin-bottom:14px}
+  .clsum .lb{font-size:10.5px;font-weight:800;color:#a21caf;letter-spacing:.7px;text-transform:uppercase;margin-bottom:7px}
+  .clsum .r{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px}
+  .clsum .r span:first-child{font-size:12.5px;font-weight:600;color:#374151}
+  .clsum .r span:last-child{font-size:13px;font-weight:800;color:#9333ea}
+  .clsum .bar{height:10px;background:#f3e8ff}.clsum .bar>i{background:linear-gradient(90deg,#a855f7,#22c55e)}
+  .cli{border:1px solid #e5e7eb;border-left:4px solid #a855f7;border-radius:11px;padding:12px 14px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start;background:#fff;transition:.2s}
+  .cli:hover{box-shadow:0 4px 14px rgba(147,51,234,.12);border-color:#d8b4fe}
+  .cli.done{background:#f0fdf4;border-left-color:#22c55e}
+  .cli.rem{border-color:#f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,.12)}
+  .cli .no{flex:0 0 auto;width:24px;height:24px;border-radius:7px;background:#fae8ff;color:#a21caf;font-size:11.5px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .cli.done .no{background:#22c55e;color:#fff}
+  .cli .ct{flex:1;min-width:0}
+  .cli .tn{font-size:13.5px;font-weight:700;color:#1f2937;line-height:1.6;word-break:break-word;white-space:pre-wrap}
+  .cli.done .tn{color:#166534}
+  .cli .st{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+  .cli .act{flex:0 0 auto;display:flex;flex-direction:column;gap:6px}
+  .pill.v{background:#f3e8ff;color:#7e22ce}
+  .kd{display:inline-block;font-size:9px;font-weight:800;padding:2px 7px;border-radius:20px;margin-left:6px;letter-spacing:.3px;vertical-align:middle}
+  .kd.p{background:#ede9fe;color:#6d28d9}.kd.c{background:#fae8ff;color:#a21caf}
+
+  .al{position:fixed;inset:0;background:rgba(76,29,149,.55);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;padding:18px;z-index:2147483003}
+  .al.on{display:flex}
+  .alc{background:#fff;width:100%;max-width:540px;border-radius:20px;overflow:hidden;box-shadow:0 30px 70px rgba(0,0,0,.45);animation:shk .5s ease-out}
+  @keyframes shk{0%{transform:scale(.85);opacity:0}55%{transform:scale(1.03)}100%{transform:scale(1);opacity:1}}
+  .alh{background:linear-gradient(135deg,#7c3aed,#c026d3);color:#fff;padding:20px;text-align:center}
+  .alh .bi{font-size:38px;display:block;animation:rng 1s ease-in-out infinite}
+  @keyframes rng{0%,100%{transform:rotate(0)}25%{transform:rotate(14deg)}75%{transform:rotate(-14deg)}}
+  .alh b{display:block;margin-top:7px;font-size:15px;letter-spacing:.5px}
+  .alb{padding:20px}
+  .almsg{font-size:14.5px;font-weight:800;color:#6d28d9;line-height:1.7;text-align:center;margin-bottom:15px}
+  .alit{background:#faf5ff;border:1px solid #e9d5ff;border-left:4px solid #7c3aed;border-radius:10px;padding:12px 14px}
+  .alit .who{font-size:11px;font-weight:800;color:#7c3aed;letter-spacing:.4px;margin-bottom:6px}
+  .alit .cnt{font-size:13.5px;color:#1f2937;line-height:1.6;white-space:pre-wrap;font-weight:700}
+  .alit .goal{font-size:12px;color:#4b5563;line-height:1.6;margin-top:8px;padding-top:8px;border-top:1px dashed #ddd6fe;white-space:pre-wrap}
+  .alf{display:flex;gap:9px;padding:0 20px 20px}
+  .alf button{flex:1;padding:11px;border-radius:11px;font-size:12.5px;font-weight:800}
+  .alf .go{background:#7c3aed;color:#fff}.alf .go:hover{background:#6d28d9}
+  .alf .sn{background:#fef3c7;color:#b45309}.alf .sn:hover{background:#fde68a}
+  .alf .cl{background:#f3f4f6;color:#4b5563}.alf .cl:hover{background:#e5e7eb}
+  .alq{padding:0 20px 16px;text-align:center;font-size:11px;color:#9ca3af}
+
+  .ts{position:fixed;bottom:22px;right:22px;background:#111827;color:#fff;padding:12px 18px;border-radius:11px;font-size:12.5px;font-weight:600;
+    box-shadow:0 10px 30px rgba(0,0,0,.35);opacity:0;transform:translateY(14px);transition:.25s;pointer-events:none;z-index:2147483004;max-width:340px;line-height:1.5}
+  .ts.on{opacity:1;transform:none}
+  .ts.ok{background:#059669}.ts.er{background:#dc2626}
+
+  .rl{padding:6px 12px 12px}
+  .rc{background:#fff;border:1px solid #e5e7eb;border-left:4px solid #f59e0b;border-radius:11px;padding:11px 13px;margin-bottom:9px;display:flex;gap:11px;align-items:flex-start}
+  .rc.past{border-left-color:#9ca3af;opacity:.72}
+  .rc .i{flex:1;min-width:0}
+  .rc .w{font-size:11.5px;font-weight:800;color:#7c3aed}
+  .rc .c{font-size:12.5px;color:#374151;margin:4px 0 6px;line-height:1.55;white-space:pre-wrap;word-break:break-word;font-weight:600}
+  .rc .t{font-size:11px;font-weight:700;color:#b45309}
+
+  @media(max-width:700px){
+    .dd{width:calc(100vw - 20px)}
+    thead th:nth-child(2),tbody td:nth-child(2){display:none}
+    .tk{flex-wrap:wrap}.act{flex-direction:row;width:100%}
+    .cli{flex-wrap:wrap}.cli .act{flex-direction:row;width:100%}
+    .md-h .rmall{display:none}
+  }
+</style>
+
+<div class="kh">
+  <button class="fab"><span class="badge"></span><span class="ic">🗓️</span><span>KẾ HOẠCH</span><span class="grip">⣿</span></button>
+
+  <div class="dd">
+    <div class="dd-h">
+      <span style="font-size:17px">🗓️</span>
+      <div><b>BẢNG KẾ HOẠCH TUẦN- DÙNG ĐỂ THIẾT LẬP LỊCH NHẮC VIỆC</b><div class="sub">Chỉ hiện tuần gần nhất • cập nhật thời gian thực</div></div>
+      <button class="x ddx">✕</button>
+    </div>
+    <div class="tabs">
+      <button class="tab on" data-tab="list">👥 Nhân viên</button>
+      <button class="tab" data-tab="cl">📋 Checklist NV</button>
+      <button class="tab" data-tab="rem">🔔 Nhắc việc đã đặt <span class="cnt"></span></button>
+    </div>
+    <div class="tools">
+      <input class="srch" type="text" placeholder="🔍 Tìm tên nhân viên hoặc bộ phận...">
+      <label class="chk"><input type="checkbox" class="onlyck" checked> <span class="onlylb">Chỉ người đã lập việc</span></label>
+    </div>
+    <div class="body">
+      <div class="pane-list">
+        <table>
+          <thead><tr>
+            <th style="width:33%">Tên nhân viên</th>
+            <th style="width:23%">Bộ phận</th>
+            <th style="width:26%">Kế hoạch tuần</th>
+            <th style="width:18%;text-align:right">Xem</th>
+          </tr></thead>
+          <tbody class="rows"></tbody>
+        </table>
+        <div class="empty ep-list">Đang tải dữ liệu...</div>
+      </div>
+      <div class="pane-cl" style="display:none">
+        <table>
+          <thead><tr>
+            <th style="width:33%">Tên nhân viên</th>
+            <th style="width:23%">Bộ phận</th>
+            <th style="width:26%">Checklist tháng</th>
+            <th style="width:18%;text-align:right">Chi tiết</th>
+          </tr></thead>
+          <tbody class="clrows"></tbody>
+        </table>
+        <div class="empty ep-cl">Đang tải dữ liệu...</div>
+      </div>
+      <div class="pane-rem rl" style="display:none"></div>
+    </div>
+  </div>
+
+  <div class="ov">
+    <div class="md">
+      <div class="md-h">
+        <div class="av">🗓️</div>
+        <div><h3 class="m-nm">—</h3><div class="s m-sb">—</div></div>
+        <div class="hb">
+          <button class="rmall">🔔 Nhắc mục tiêu tuần</button>
+          <button class="x mdx">✕</button>
+        </div>
+      </div>
+      <div class="md-b"></div>
+    </div>
+  </div>
+
+  <div class="al">
+    <div class="alc">
+      <div class="alh"><span class="bi">🔔</span><b>NHẮC VIỆC – KẾ HOẠCH TUẦN</b></div>
+      <div class="alb">
+        <div class="almsg"></div>
+        <div class="alit"><div class="who"></div><div class="cnt"></div><div class="goal"></div></div>
+      </div>
+      <div class="alq"></div>
+      <div class="alf">
+        <button class="go">🗓️ Xem kế hoạch tuần</button>
+        <button class="sn">⏰ Nhắc lại 10 phút</button>
+        <button class="cl">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ts"></div>
+</div>`;
+
+  const $  = s => root.querySelector(s);
+  const $$ = s => Array.from(root.querySelectorAll(s));
+
+  const elFab = $(".fab"), elBadge = $(".badge"), elDD = $(".dd");
+  const elRows = $(".rows"), elEpList = $(".ep-list"), elSrch = $(".srch"), elOnly = $(".onlyck");
+  const elPaneL = $(".pane-list"), elPaneR = $(".pane-rem"), elRemCnt = $(".tab .cnt"), elTools = $(".tools");
+  const elPaneC = $(".pane-cl"), elClRows = $(".clrows"), elEpCl = $(".ep-cl"), elOnlyLb = $(".onlylb");
+  const elOv = $(".ov"), elMdB = $(".md-b"), elMdNm = $(".m-nm"), elMdSb = $(".m-sb"), elRmAll = $(".rmall");
+  const elMdAv = $(".md-h .av"), elAlTit = $(".alh b"), elAlIco = $(".alh .bi"), elAlGo = $(".alf .go");
+  const elAl = $(".al"), elToast = $(".ts");
+
+  let ALL = [], PLANS = [], REMS = {}, CLREMS = {}, CURRENT = null, tsTimer = null;
+  let MODE = "plan";   // "plan" = bảng kế hoạch tuần | "cl" = checklist nhân viên
+  let TAB  = "list";
+
+  function toast(msg, type) {
+    elToast.textContent = msg;
+    elToast.className = "ts on" + (type ? " " + type : "");
+    clearTimeout(tsTimer);
+    tsTimer = setTimeout(() => { elToast.className = "ts" + (type ? " " + type : ""); }, 3400);
+  }
+
+  /* ---------------------------------------------------- ĐIỀU CHỈNH VỊ TRÍ ICON  */
+  const pos = lsGet(LS_POS, { top:76, right:18 });
+  function applyPos() {
+    elFab.style.top = Math.min(pos.top, Math.max(8, window.innerHeight-60)) + "px";
+    if (pos.left != null) { elFab.style.left = pos.left + "px"; elFab.style.right = "auto"; }
+    else { elFab.style.right = (pos.right ?? 18) + "px"; elFab.style.left = "auto"; }
+  }
+  applyPos();
+  (function drag() {
+    let sx, sy, st, sl, moving = false, active = false;
+    $(".grip").addEventListener("mousedown", e => {
+      e.preventDefault(); e.stopPropagation();
+      const r = elFab.getBoundingClientRect();
+      sx = e.clientX; sy = e.clientY; st = r.top; sl = r.left; active = true; moving = false;
+      document.addEventListener("mousemove", mv, true);
+      document.addEventListener("mouseup", up, true);
+    });
+    function mv(e) {
+      if (!active) return;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      if (Math.abs(dx) + Math.abs(dy) > 3) moving = true;
+      pos.top = Math.max(0, Math.min(window.innerHeight - 50, st + dy));
+      pos.left = Math.max(0, Math.min(window.innerWidth - 60, sl + dx));
+      pos.right = null; applyPos(); placeDD();
+    }
+    function up() {
+      active = false;
+      document.removeEventListener("mousemove", mv, true);
+      document.removeEventListener("mouseup", up, true);
+      if (moving) lsSet(LS_POS, pos);
+    }
+  })();
+
+  function placeDD() {
+    const r = elFab.getBoundingClientRect();
+    const w = Math.min(680, window.innerWidth - 24);
+    let left = r.right - w; if (left < 12) left = 12;
+    elDD.style.width = w + "px";
+    elDD.style.left = left + "px";
+    elDD.style.top = (r.bottom + 8) + "px";
+    $(".body").style.maxHeight = Math.max(180, window.innerHeight - r.bottom - 120) + "px";
+  }
+  window.addEventListener("resize", () => { applyPos(); if (elDD.classList.contains("on")) placeDD(); });
+
+  /* ------------------------------------------------------------- RENDER */
+  function depClass(d) {
+    const n = noAcc(d);
+    if (n.includes("kinh doanh")) return "kd";
+    if (n.includes("ke toan")) return "kt";
+    if (n.includes("kho")) return "kv";
+    return "na";
+  }
+  const remOf = pid => REMS[pid] || {};
+  const remCount = pid => Object.keys(remOf(pid)).length;
+  const clRemOf = pid => CLREMS[pid] || {};
+  const clRemCount = pid => Object.keys(clRemOf(pid)).length;
+  const bagOf  = k => (k === "cl" ? CLREMS : REMS);
+  const nodeOf = k => (k === "cl" ? NODE_CLREM : NODE_REMIND);
+
+  /* ---- CHECKLIST THÁNG của 1 kế hoạch ---- */
+  function clItems(p) {
+    return toArr(p && p.monthlyChecklist).map((it, i) => ({
+      id: (it && it.id) || ("cl_" + i),
+      content: (it && it.content) || "",
+      isCompleted: !!(it && it.isCompleted)
+    })).filter(it => it.content.trim() !== "" || it.isCompleted);
+  }
+  function clStats(p) {
+    const a = clItems(p), done = a.filter(x => x.isCompleted).length;
+    return { total: a.length, done, pct: a.length ? Math.round(done / a.length * 100) : 0 };
+  }
+  const REPEAT_LB = { none: "Không lặp", daily: "Lặp hàng ngày", weekly: "Lặp hàng tuần", monthly: "Lặp hàng tháng" };
+  function nextRepeat(dtStr, repeat) {
+    const x = D(dtStr);
+    if (!x || !repeat || repeat === "none") return null;
+    const n = new Date(x.getTime());
+    let guard = 0;
+    do {
+      if (repeat === "monthly") n.setMonth(n.getMonth() + 1);
+      else n.setDate(n.getDate() + (repeat === "weekly" ? 7 : 1));
+    } while (n.getTime() <= Date.now() && guard++ < 500);
+    return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}T${pad(n.getHours())}:${pad(n.getMinutes())}`;
+  }
+
+  function renderList() {
+    const q = noAcc(elSrch.value), only = elOnly.checked;
+    let rows = PLANS.slice();
+    if (only) rows = rows.filter(p => planStats(p).total > 0);
+    if (q) rows = rows.filter(p => noAcc(p.employeeName).includes(q) || noAcc(p.department).includes(q));
+    const tOf = p => { const x = D(p.creationDate); return x ? x.getTime() : 0; };
+    rows.sort((a, b) => {
+      const diff = tOf(b) - tOf(a);                       // tuần lập mới nhất lên đầu
+      if (diff !== 0) return diff;
+      return noAcc(a.employeeName) < noAcc(b.employeeName) ? -1 : 1;
+    });
+
+    if (!rows.length) {
+      elRows.innerHTML = "";
+      elEpList.style.display = "block";
+      elEpList.textContent = ALL.length ? "Không tìm thấy nhân viên phù hợp." : "Chưa có kế hoạch tuần nào trên hệ thống.";
+      return;
+    }
+    elEpList.style.display = "none";
+    elRows.innerHTML = rows.map(p => {
+      const s = planStats(p), nr = remCount(p.id);
+      return `<tr>
+        <td>
+          <div class="nm">${esc(p.employeeName || "(Chưa đặt tên)")}
+            <span class="tagw">TUẦN GẦN NHẤT</span>
+            ${nr ? `<span class="bell-mini">🔔${nr}</span>` : ""}</div>
+          <div class="dt">Ngày lập: ${fmtDate(p.creationDate)}</div>
+        </td>
+        <td><span class="dep ${depClass(p.department)}">${esc(p.department || "Chưa chọn")}</span></td>
+        <td class="prog">
+          <div class="bar"><i style="width:${s.pct}%"></i></div>
+          <div class="ptxt">${s.done}/${s.total} việc • ${s.pct}%</div>
+        </td>
+        <td style="text-align:right"><button class="btn-v" data-view="${esc(p.id)}" ${s.total ? "" : "disabled"}>Xem</button></td>
+      </tr>`;
+    }).join("");
+  }
+
+  /* ------------------------- DANH SÁCH NHÂN VIÊN CÓ CHECKLIST ------------- */
+  function renderCL() {
+    const q = noAcc(elSrch.value), only = elOnly.checked;
+    let rows = PLANS.slice();
+    if (only) rows = rows.filter(p => clStats(p).total > 0);
+    if (q) rows = rows.filter(p => noAcc(p.employeeName).includes(q) || noAcc(p.department).includes(q));
+    const tOf = p => { const x = D(p.creationDate); return x ? x.getTime() : 0; };
+    rows.sort((a, b) => {
+      const diff = tOf(b) - tOf(a);
+      if (diff !== 0) return diff;
+      return noAcc(a.employeeName) < noAcc(b.employeeName) ? -1 : 1;
+    });
+
+    if (!rows.length) {
+      elClRows.innerHTML = "";
+      elEpCl.style.display = "block";
+      elEpCl.textContent = ALL.length ? "Không tìm thấy nhân viên có checklist phù hợp." : "Chưa có dữ liệu checklist trên hệ thống.";
+      return;
+    }
+    elEpCl.style.display = "none";
+    elClRows.innerHTML = rows.map(p => {
+      const s = clStats(p), nr = clRemCount(p.id);
+      return `<tr>
+        <td>
+          <div class="nm">${esc(p.employeeName || "(Chưa đặt tên)")}
+            <span class="tagc">CHECKLIST</span>
+            ${nr ? `<span class="bell-mini">🔔${nr}</span>` : ""}</div>
+          <div class="dt">Kế hoạch ngày: ${fmtDate(p.creationDate)}</div>
+        </td>
+        <td><span class="dep ${depClass(p.department)}">${esc(p.department || "Chưa chọn")}</span></td>
+        <td class="prog">
+          <div class="bar"><i style="width:${s.pct}%"></i></div>
+          <div class="ptxt">${s.done}/${s.total} point • ${s.pct}%</div>
+        </td>
+        <td style="text-align:right"><button class="btn-c" data-clview="${esc(p.id)}" ${s.total ? "" : "disabled"}>Xem chi tiết</button></td>
+      </tr>`;
+    }).join("");
+  }
+
+  function renderRemPane() {
+    const flat = [];
+    Object.keys(REMS).forEach(pid => Object.keys(REMS[pid] || {}).forEach(tid => {
+      flat.push(Object.assign({ planId: pid, taskId: tid, kind: "plan" }, REMS[pid][tid], { kind: "plan" }));
+    }));
+    Object.keys(CLREMS).forEach(pid => Object.keys(CLREMS[pid] || {}).forEach(tid => {
+      flat.push(Object.assign({ planId: pid, taskId: tid }, CLREMS[pid][tid], { kind: "cl" }));
+    }));
+    flat.sort((a, b) => String(a.datetime).localeCompare(String(b.datetime)));
+    elRemCnt.textContent = flat.length ? `(${flat.length})` : "";
+    elBadge.textContent = flat.length;
+    elBadge.classList.toggle("on", flat.length > 0);
+
+    if (!flat.length) { elPaneR.innerHTML = `<div class="empty">Chưa thiết lập nhắc việc nào.</div>`; return; }
+    const now = Date.now();
+    elPaneR.innerHTML = flat.map(r => {
+      const past = (D(r.datetime) || new Date(0)).getTime() < now;
+      const isCL = r.kind === "cl";
+      return `<div class="rc ${past ? "past" : ""}" ${isCL ? 'style="border-left-color:#a855f7"' : ""}>
+        <div class="i">
+          <div class="w">${esc(r.employeeName || "—")} • ${esc(r.department || "—")}${r.dayName ? " • " + esc(r.dayName) : ""}<span class="kd ${isCL ? "c" : "p"}">${isCL ? "CHECKLIST" : "KẾ HOẠCH"}</span></div>
+          <div class="c">${esc(r.taskName || (isCL ? "(toàn bộ checklist)" : "(mục tiêu tuần)"))}</div>
+          <div class="t">⏰ ${fmtDT(r.datetime)} ${past ? "• đã tới hạn" : ""} • ${r.scope === "all" ? "mọi máy" : "máy này"}${r.repeat && r.repeat !== "none" ? " • 🔁 " + (REPEAT_LB[r.repeat] || r.repeat) : ""}</div>
+        </div>
+        <button class="bt r" data-del="${esc(r.planId)}|${esc(r.taskId)}|${isCL ? "cl" : "plan"}">Hủy</button>
+      </div>`;
+    }).join("");
+  }
+
+  /* --------------------------------------------- POPUP BẢNG KẾ HOẠCH TUẦN */
+  function openDetail(planId) {
+    const p = PLANS.find(x => x.id === planId) || ALL.find(x => x.id === planId);
+    if (!p) return;
+    CURRENT = p; MODE = "plan";
+    elMdAv.textContent = "🗓️";
+    const s = planStats(p), rem = remOf(p.id);
+    elMdNm.textContent = p.employeeName || "(Chưa đặt tên)";
+    elMdSb.textContent = `${p.department || "Chưa chọn bộ phận"} • Tuần lập ngày ${fmtDate(p.creationDate)} • ${s.done}/${s.total} việc hoàn thành`;
+    elRmAll.textContent = rem[PLAN_KEY] ? "🔔 Sửa nhắc mục tiêu" : "🔔 Nhắc mục tiêu tuần";
+
+    const days = p.days && typeof p.days === "object" ? p.days : {};
+    const names = Object.keys(days).sort((a, b) => {
+      const ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+
+    let html = "";
+    html += `<div class="obj"><div class="lb">🎯 Mục tiêu kế hoạch tuần</div><div class="tx">${esc(p.objective || "(Nhân viên chưa khai báo mục tiêu tuần)")}</div></div>`;
+    html += `<div class="pw"><div class="r"><span>Tiến độ hoàn thành công việc tuần</span><span>${s.pct}%</span></div><div class="bar"><i style="width:${s.pct}%"></i></div></div>`;
+    html += `<div class="slot-plan"></div>`;
+
+    if (!names.length) {
+      html += `<div class="empty">Nhân viên này chưa lập công việc nào trong tuần.</div>`;
+    } else {
+      names.forEach(dn => {
+        const d = days[dn] || {}, tasks = toArr(d.tasks);
+        html += `<div class="day">
+          <div class="day-h">
+            <h4>${esc(dn)}</h4><span class="dd2">${fmtDate(d.date)}</span>
+            <span class="cnt">${tasks.length} việc</span>
+          </div>
+          <div class="day-b">`;
+        if (!tasks.length) {
+          html += `<div class="empty" style="padding:14px">Chưa có công việc nào</div>`;
+        } else {
+          tasks.forEach((t, i) => {
+            const tid = t.id || `${dn}_${i}`;
+            const r = rem[tid];
+            const cls = t.isCompleted ? "done" : (t.isContinued ? "cont" : "");
+            html += `<div class="tk ${cls} ${r ? "rem" : ""}" data-task="${esc(tid)}">
+              <div class="no">${t.isCompleted ? "✓" : i + 1}</div>
+              <div class="ct">
+                <div class="tn">${esc(t.name || "(chưa đặt tên công việc)")}</div>
+                ${t.expectedResult ? `<div class="ln"><b>🎯 Kết quả kỳ vọng:</b> ${esc(t.expectedResult)}</div>` : ""}
+                ${t.adjustedExpectedResult ? `<div class="ln rp">✍️ Tự báo cáo: ${esc(t.adjustedExpectedResult)}</div>` : ""}
+                <div class="st">
+                  <span class="pill ${t.isCompleted ? "g" : (t.isContinued ? "y" : "o")}">${t.isCompleted ? "✅ Hoàn thành" : (t.isContinued ? "🔁 Tiếp tục thực hiện" : "⏳ Chưa hoàn thành")}</span>
+                  ${t.endDate ? `<span class="pill d">📅 Hạn ${fmtShort(t.endDate)}</span>` : ""}
+                  ${t.hasReminder ? `<span class="pill w">⭐ App gốc bật nhắc</span>` : ""}
+                  ${r ? `<span class="pill w">🔔 Nhắc lúc ${fmtDT(r.datetime)}</span>` : ""}
+                </div>
+                <div class="slot"></div>
+              </div>
+              <div class="act">
+                <button class="bt ${r ? "o" : "p"}" data-set="${esc(tid)}">${r ? "🔔 Sửa nhắc" : "🔔 Nhắc việc"}</button>
+                ${r ? `<button class="bt r" data-rm="${esc(tid)}">Hủy nhắc</button>` : ""}
+              </div>
+            </div>`;
+          });
+        }
+        html += `</div></div>`;
+      });
+    }
+    elMdB.innerHTML = html;
+    elOv.classList.add("on");
+  }
+
+  /* tìm thông tin 1 task theo id trong plan hiện tại */
+  /* ------------------------ POPUP TOÀN BỘ CHECKLIST CỦA NHÂN VIÊN --------- */
+  function openChecklistDetail(planId) {
+    const p = PLANS.find(x => x.id === planId) || ALL.find(x => x.id === planId);
+    if (!p) return;
+    CURRENT = p; MODE = "cl";
+    elMdAv.textContent = "📋";
+    const items = clItems(p), s = clStats(p), rem = clRemOf(p.id);
+    elMdNm.textContent = p.employeeName || "(Chưa đặt tên)";
+    elMdSb.textContent = `${p.department || "Chưa chọn bộ phận"} • CHECKLIST THÁNG • ${s.done}/${s.total} point đã hoàn thành • KH ngày ${fmtDate(p.creationDate)}`;
+    elRmAll.style.display = "";
+    elRmAll.textContent = rem[CL_KEY] ? "🔔 Sửa nhắc toàn bộ checklist" : "🔔 Nhắc toàn bộ checklist";
+
+    let html = "";
+    html += `<div class="clsum">
+      <div class="lb">📋 Checklist tháng của nhân viên</div>
+      <div class="r"><span>Tiến độ hoàn thành checklist</span><span>${s.pct}%</span></div>
+      <div class="bar"><i style="width:${s.pct}%"></i></div>
+    </div>`;
+    html += `<div class="slot-cl-all"></div>`;
+
+    if (!items.length) {
+      html += `<div class="empty">Nhân viên này chưa lập checklist nào.</div>`;
+    } else {
+      items.forEach((it, i) => {
+        const r = rem[it.id];
+        html += `<div class="cli ${it.isCompleted ? "done" : ""} ${r ? "rem" : ""}" data-item="${esc(it.id)}">
+          <div class="no">${it.isCompleted ? "✓" : i + 1}</div>
+          <div class="ct">
+            <div class="tn">${esc(it.content || "(chưa nhập nội dung)")}</div>
+            <div class="st">
+              <span class="pill ${it.isCompleted ? "g" : "o"}">${it.isCompleted ? "✅ Đã hoàn thành" : "⏳ Chưa hoàn thành"}</span>
+              ${r ? `<span class="pill w">🔔 Nhắc lúc ${fmtDT(r.datetime)}</span>` : ""}
+              ${r && r.repeat && r.repeat !== "none" ? `<span class="pill v">🔁 ${esc(REPEAT_LB[r.repeat] || r.repeat)}</span>` : ""}
+            </div>
+            <div class="slot"></div>
+          </div>
+          <div class="act">
+            <button class="bt ${r ? "o" : "p"}" data-set="${esc(it.id)}">${r ? "🔔 Sửa nhắc" : "🔔 Đặt nhắc"}</button>
+            ${r ? `<button class="bt r" data-rm="${esc(it.id)}">Hủy nhắc</button>` : ""}
+          </div>
+        </div>`;
+      });
+    }
+    elMdB.innerHTML = html;
+    elOv.classList.add("on");
+  }
+
+  /* tìm 1 checklist point theo id trong plan hiện tại */
+  function findClItem(tid) {
+    if (tid === CL_KEY) return { id: CL_KEY, content: "Rà soát toàn bộ checklist tháng", isCompleted: false };
+    return clItems(CURRENT).find(x => x.id === tid) || { id: tid, content: "", isCompleted: false };
+  }
+
+  function findTask(tid) {
+    if (tid === PLAN_KEY) return { dayName: "", task: { name: "Rà soát mục tiêu tuần", id: PLAN_KEY } };
+    const all = planTasks(CURRENT);
+    for (const x of all) {
+      const id = x.t.id || `${x.day}_${x.idx}`;
+      if (id === tid) return { dayName: x.day, task: x.t };
+    }
+    return { dayName: "", task: {} };
+  }
+
+  function boxOf(tid) {
+    if (MODE === "cl") {
+      return tid === CL_KEY ? elMdB.querySelector(".slot-cl-all")
+                            : elMdB.querySelector(`.cli[data-item="${CSS.escape(tid)}"] .slot`);
+    }
+    return tid === PLAN_KEY ? elMdB.querySelector(".slot-plan")
+                            : elMdB.querySelector(`.tk[data-task="${CSS.escape(tid)}"] .slot`);
+  }
+
+  function openRemForm(tid) {
+    const box = boxOf(tid);
+    if (!box) return;
+    if (box.querySelector(".rf")) { box.innerHTML = ""; return; }
+    $$(".slot, .slot-plan, .slot-cl-all").forEach(s => { if (s !== box) s.innerHTML = ""; });
+
+    const isCL = MODE === "cl";
+    const cur = (isCL ? clRemOf(CURRENT.id) : remOf(CURRENT.id))[tid];
+    let d = todayISO(), t = nowHM(), sc = "device", rp = "none";
+    if (cur && cur.datetime) {
+      const x = D(cur.datetime);
+      if (x) { d = `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`; t = `${pad(x.getHours())}:${pad(x.getMinutes())}`; }
+      sc = cur.scope || "device";
+      rp = cur.repeat || "none";
+    }
+    const ttl = isCL
+      ? (tid === CL_KEY ? "⏰ THIẾT LẬP NHẮC – TOÀN BỘ CHECKLIST" : "⏰ THIẾT LẬP NHẮC – CHECKLIST POINT NÀY")
+      : `⏰ THIẾT LẬP NHẮC VIỆC ${tid === PLAN_KEY ? "– MỤC TIÊU TUẦN" : ""}`;
+    box.innerHTML = `
+      <div class="rf">
+        <div class="t">${ttl}</div>
+        <div class="g">
+          <div class="fg"><label>NGÀY NHẮC</label><input type="date" class="f-d" value="${d}"></div>
+          <div class="fg"><label>GIỜ NHẮC</label><input type="time" class="f-t" value="${t}"></div>
+          <div class="fg"><label>LẶP LẠI</label>
+            <select class="f-r">
+              <option value="none" ${rp === "none" ? "selected" : ""}>Không lặp</option>
+              <option value="daily" ${rp === "daily" ? "selected" : ""}>Hàng ngày</option>
+              <option value="weekly" ${rp === "weekly" ? "selected" : ""}>Hàng tuần</option>
+              <option value="monthly" ${rp === "monthly" ? "selected" : ""}>Hàng tháng</option>
+            </select>
+          </div>
+          <div class="fg"><label>PHẠM VI</label>
+            <select class="f-s">
+              <option value="device" ${sc === "device" ? "selected" : ""}>Chỉ máy này</option>
+              <option value="all" ${sc === "all" ? "selected" : ""}>Mọi máy đang mở app</option>
+            </select>
+          </div>
+          <button class="sv" data-save="${esc(tid)}">💾 Lưu nhắc</button>
+          <button class="pv" data-prev="${esc(tid)}">👁️ Xem thử popup</button>
+          <button class="cc" data-cancel="1">Hủy</button>
+        </div>
+        <div class="hint">Đúng ngày giờ đã đặt, máy sẽ hiện popup nhắc kèm chuông. Nếu lúc đó máy tắt, mở lại ứng dụng trong 12 giờ sẽ được nhắc bù. Chọn "Lặp lại" để hệ thống tự dời sang kỳ kế tiếp sau mỗi lần nhắc.</div>
+      </div>`;
+    box.querySelector(".f-d").focus();
+  }
+
+  function buildPayload(tid, dt, sc, rp) {
+    if (MODE === "cl") {
+      const it = findClItem(tid);
+      return {
+        kind: "cl",
+        datetime: dt, scope: sc, repeat: rp || "none", deviceId: DEVICE_ID,
+        planId: CURRENT.id, taskId: tid,
+        employeeName: CURRENT.employeeName || "",
+        department: CURRENT.department || "",
+        dayName: "",
+        taskName: tid === CL_KEY ? "Rà soát TOÀN BỘ checklist tháng" : (it.content || ""),
+        expectedResult: "",
+        objective: CURRENT.objective || "",
+        createdAt: new Date().toISOString()
+      };
+    }
+    const f = findTask(tid);
+    return {
+      datetime: dt, scope: sc, repeat: rp || "none", deviceId: DEVICE_ID,
+      planId: CURRENT.id, taskId: tid,
+      employeeName: CURRENT.employeeName || "",
+      department: CURRENT.department || "",
+      dayName: f.dayName || "",
+      taskName: tid === PLAN_KEY ? "Rà soát toàn bộ mục tiêu tuần" : (f.task.name || ""),
+      expectedResult: f.task.expectedResult || "",
+      objective: CURRENT.objective || "",
+      createdAt: new Date().toISOString()
+    };
+  }
+
+  function readForm(tid) {
+    const box = boxOf(tid);
+    if (!box) return null;
+    const d = box.querySelector(".f-d").value, t = box.querySelector(".f-t").value, sc = box.querySelector(".f-s").value;
+    const rSel = box.querySelector(".f-r"), rp = rSel ? rSel.value : "none";
+    if (!d || !t) { toast("Vui lòng chọn đầy đủ ngày và giờ nhắc.", "er"); return null; }
+    const dt = `${d}T${t}`;
+    if (!D(dt)) { toast("Ngày giờ không hợp lệ.", "er"); return null; }
+    return { dt, sc, rp };
+  }
+
+  async function saveRem(tid) {
+    const f = readForm(tid); if (!f) return;
+    const kind = MODE === "cl" ? "cl" : "plan";
+    try {
+      await R.set(R.ref(db, `${nodeOf(kind)}/${CURRENT.id}/${tid}`), buildPayload(tid, f.dt, f.sc, f.rp));
+      clearFired(CURRENT.id, tid, kind);
+      askNotifyPermission();
+      toast(`✅ Đã lưu nhắc ${kind === "cl" ? "checklist" : "việc"} lúc ${fmtDT(f.dt)}`, "ok");
+      setTimeout(() => (kind === "cl" ? openChecklistDetail(CURRENT.id) : openDetail(CURRENT.id)), 120);
+    } catch (e) { console.error(e); toast("Không lưu được nhắc việc. Kiểm tra kết nối mạng.", "er"); }
+  }
+
+  function previewRem(tid) {
+    const f = readForm(tid);
+    queue.unshift(buildPayload(tid, f ? f.dt : new Date().toISOString(), "device", f ? f.rp : "none"));
+    if (!showing) showNext();
+  }
+
+  async function delRem(pid, tid, kind) {
+    const k = kind || (MODE === "cl" ? "cl" : "plan");
+    try {
+      await R.remove(R.ref(db, `${nodeOf(k)}/${pid}/${tid}`));
+      clearFired(pid, tid, k);
+      toast(k === "cl" ? "Đã hủy nhắc checklist." : "Đã hủy nhắc việc.", "ok");
+      if (elOv.classList.contains("on") && CURRENT && CURRENT.id === pid) {
+        setTimeout(() => (MODE === "cl" ? openChecklistDetail(pid) : openDetail(pid)), 120);
+      }
+    } catch (e) { console.error(e); toast("Không hủy được. Thử lại sau.", "er"); }
+  }
+
+  /* --------------------------------------------------- THÔNG BÁO ĐÚNG GIỜ */
+  const fkey = (p, t, d, k) => `${k === "cl" ? "cl::" : ""}${p}::${t}::${d}`;
+  const getFired = () => lsGet(LS_FIRED, {});
+  const markFired = (p, t, d, k) => { const f = getFired(); f[fkey(p, t, d, k)] = Date.now(); lsSet(LS_FIRED, f); };
+  const isFired = (p, t, d, k) => !!getFired()[fkey(p, t, d, k)];
+  function clearFired(p, t, k) {
+    const pre = `${k === "cl" ? "cl::" : ""}${p}::${t}::`;
+    const f = getFired(); let ch = false;
+    Object.keys(f).forEach(x => { if (x.startsWith(pre)) { delete f[x]; ch = true; } });
+    if (ch) lsSet(LS_FIRED, f);
+  }
+  function askNotifyPermission() {
+    try { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); } catch {}
+  }
+
+  const queue = [];
+  let showing = false;
+
+  function scanBag(bag, kind) {
+    const now = Date.now();
+    Object.keys(bag).forEach(pid => Object.keys(bag[pid] || {}).forEach(tid => {
+      const r = bag[pid][tid]; if (!r || !r.datetime) return;
+      if (r.scope !== "all" && r.deviceId && r.deviceId !== DEVICE_ID) return;
+      const x = D(r.datetime); if (!x) return;
+      const ts = x.getTime();
+      if (ts > now || now - ts > CATCHUP_MS) return;
+      if (isFired(pid, tid, r.datetime, kind)) return;
+      markFired(pid, tid, r.datetime, kind);
+      queue.push(Object.assign({ planId: pid, taskId: tid }, r, { kind }));
+      if (r.repeat && r.repeat !== "none") {
+        const nx = nextRepeat(r.datetime, r.repeat);
+        if (nx) R.set(R.ref(db, `${nodeOf(kind)}/${pid}/${tid}`), Object.assign({}, r, { datetime: nx })).catch(() => {});
+      }
+    }));
+  }
+  function tick() {
+    scanBag(REMS, "plan");
+    scanBag(CLREMS, "cl");
+    if (queue.length && !showing) showNext();
+  }
+
+  function showNext() {
+    const r = queue.shift();
+    if (!r) { showing = false; return; }
+    showing = true;
+    const isCL = r.kind === "cl";
+    const MSG  = isCL ? ALERT_CL : ALERT_TEXT;
+    const TIT  = isCL ? "NHẮC CHECKLIST – KẾ HOẠCH THÁNG" : "NHẮC VIỆC – KẾ HOẠCH TUẦN";
+    elAlTit.textContent = TIT;
+    elAlIco.textContent = isCL ? "📋" : "🔔";
+    elAlGo.textContent  = isCL ? "📋 Xem checklist" : "🗓️ Xem kế hoạch tuần";
+    $(".almsg").textContent = MSG;
+    $(".alit .who").textContent = `${r.employeeName || "—"} • ${r.department || "—"}${r.dayName ? " • " + r.dayName : ""}`;
+    $(".alit .cnt").textContent = (isCL ? "📋 " : "📌 ") + (r.taskName || (isCL ? "Rà soát checklist" : "Rà soát mục tiêu tuần"));
+    const goal = $(".alit .goal");
+    const parts = [];
+    if (r.expectedResult) parts.push("🎯 Kết quả kỳ vọng: " + r.expectedResult);
+    if (isCL && r.repeat && r.repeat !== "none") parts.push("🔁 " + (REPEAT_LB[r.repeat] || r.repeat));
+    if (r.objective) parts.push("🧭 Mục tiêu tuần: " + r.objective);
+    goal.textContent = parts.join("\n");
+    goal.style.display = parts.length ? "" : "none";
+    $(".alq").textContent = `Hẹn lúc ${fmtDT(r.datetime)}${queue.length ? ` • còn ${queue.length} nhắc khác` : ""}`;
+    elAl.dataset.pid = r.planId; elAl.dataset.tid = r.taskId; elAl.dataset.kind = isCL ? "cl" : "plan";
+    elAl.classList.add("on");
+    beep();
+    try {
+      if ("Notification" in window && Notification.permission === "granted") {
+        const n = new Notification((isCL ? "📋 " : "🔔 ") + TIT, {
+          body: `${MSG}\n\n[${r.employeeName || ""}] ${String(r.taskName || "").slice(0, 120)}`,
+          tag: `${isCL ? "cl" : "kh"}_${r.planId}_${r.taskId}`, requireInteraction: true
+        });
+        n.onclick = () => { try { window.focus(); } catch {} n.close(); };
+      }
+    } catch {}
+  }
+  function closeAlert() { elAl.classList.remove("on"); showing = false; setTimeout(showNext, 350); }
+
+  /* ------------------------------------------------------------- SỰ KIỆN */
+  elFab.addEventListener("click", e => {
+    if (e.target.classList.contains("grip")) return;
+    if (elDD.classList.toggle("on")) { placeDD(); askNotifyPermission(); }
+  });
+  $(".ddx").addEventListener("click", () => elDD.classList.remove("on"));
+  document.addEventListener("click", e => {
+    if (!elDD.classList.contains("on")) return;
+    const path = e.composedPath ? e.composedPath() : [];
+    if (path.includes(elDD) || path.includes(elFab) || path.includes(elOv) || path.includes(elAl)) return;
+    elDD.classList.remove("on");
+  }, true);
+
+  $$(".tab").forEach(t => t.addEventListener("click", () => {
+    $$(".tab").forEach(x => x.classList.remove("on")); t.classList.add("on");
+    TAB = t.dataset.tab || "list";
+    elPaneL.style.display = TAB === "list" ? "" : "none";
+    elPaneC.style.display = TAB === "cl"   ? "" : "none";
+    elPaneR.style.display = TAB === "rem"  ? "" : "none";
+    elTools.style.display = TAB === "rem"  ? "none" : "";
+    elOnlyLb.textContent = TAB === "cl" ? "Chỉ người có checklist" : "Chỉ người đã lập việc";
+    elSrch.placeholder   = TAB === "cl" ? "🔍 Tìm nhân viên có checklist..." : "🔍 Tìm tên nhân viên hoặc bộ phận...";
+    if (TAB === "cl") renderCL();
+  }));
+
+  const refreshLists = () => { renderList(); renderCL(); };
+  elSrch.addEventListener("input", refreshLists);
+  elOnly.addEventListener("change", refreshLists);
+  elRows.addEventListener("click", e => {
+    const b = e.target.closest("[data-view]"); if (b) openDetail(b.getAttribute("data-view"));
+  });
+  elClRows.addEventListener("click", e => {
+    const b = e.target.closest("[data-clview]"); if (b) openChecklistDetail(b.getAttribute("data-clview"));
+  });
+  elPaneR.addEventListener("click", e => {
+    const b = e.target.closest("[data-del]"); if (!b) return;
+    const p = b.getAttribute("data-del").split("|");
+    delRem(p[0], p[1], p[2] || "plan");
+  });
+
+  $(".mdx").addEventListener("click", () => elOv.classList.remove("on"));
+  elOv.addEventListener("click", e => { if (e.target === elOv) elOv.classList.remove("on"); });
+  elRmAll.addEventListener("click", () => { openRemForm(MODE === "cl" ? CL_KEY : PLAN_KEY); elMdB.scrollTop = 0; });
+  elMdB.addEventListener("click", e => {
+    const s = e.target.closest("[data-set]");    if (s) { openRemForm(s.getAttribute("data-set")); return; }
+    const v = e.target.closest("[data-save]");   if (v) { saveRem(v.getAttribute("data-save")); return; }
+    const w = e.target.closest("[data-prev]");   if (w) { previewRem(w.getAttribute("data-prev")); return; }
+    const c = e.target.closest("[data-cancel]"); if (c) { c.closest(".rf").parentElement.innerHTML = ""; return; }
+    const r = e.target.closest("[data-rm]");     if (r) { delRem(CURRENT.id, r.getAttribute("data-rm"), MODE === "cl" ? "cl" : "plan"); return; }
+  });
+
+  $(".alf .cl").addEventListener("click", closeAlert);
+  elAlGo.addEventListener("click", () => {
+    const pid = elAl.dataset.pid, isCL = elAl.dataset.kind === "cl";
+    closeAlert();
+    elDD.classList.add("on"); placeDD();
+    if (isCL) openChecklistDetail(pid); else openDetail(pid);
+  });
+  $(".alf .sn").addEventListener("click", () => {
+    const pid = elAl.dataset.pid, tid = elAl.dataset.tid;
+    const kind = elAl.dataset.kind === "cl" ? "cl" : "plan";
+    const r = bagOf(kind)[pid] && bagOf(kind)[pid][tid];
+    if (r) {
+      const nd = new Date(Date.now() + 10 * 60000);
+      const dt = `${nd.getFullYear()}-${pad(nd.getMonth()+1)}-${pad(nd.getDate())}T${pad(nd.getHours())}:${pad(nd.getMinutes())}`;
+      R.set(R.ref(db, `${nodeOf(kind)}/${pid}/${tid}`), Object.assign({}, r, { datetime: dt }))
+        .then(() => { clearFired(pid, tid, kind); toast("⏰ Sẽ nhắc lại sau 10 phút.", "ok"); })
+        .catch(() => toast("Không hoãn được nhắc việc.", "er"));
+    }
+    closeAlert();
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Escape") return;
+    if (elAl.classList.contains("on")) { closeAlert(); return; }
+    if (elOv.classList.contains("on")) { elOv.classList.remove("on"); return; }
+    if (elDD.classList.contains("on")) elDD.classList.remove("on");
+  }, true);
+
+  /* ---------------------------------------------------- LẮNG NGHE FIREBASE */
+  R.onValue(R.ref(db, NODE_PLANS), snap => {
+    const raw = snap.val() || {};
+    ALL = Object.keys(raw).map(k => Object.assign({}, raw[k], { id: raw[k].id || k }));
+    PLANS = latestPerEmployee(ALL);           // CHỈ TUẦN GẦN NHẤT
+    renderList(); renderCL();
+    if (elOv.classList.contains("on") && CURRENT) {
+      const f = PLANS.find(x => x.id === CURRENT.id) || ALL.find(x => x.id === CURRENT.id);
+      if (f) CURRENT = f;
+    }
+  }, err => { console.error("[KẾ HOẠCH WIDGET] plans:", err); elEpList.textContent = "Không đọc được dữ liệu kế hoạch."; elEpCl.textContent = "Không đọc được dữ liệu checklist."; });
+
+  R.onValue(R.ref(db, NODE_REMIND), snap => {
+    REMS = snap.val() || {};
+    Object.keys(REMS).forEach(p => { if (!REMS[p] || typeof REMS[p] !== "object") delete REMS[p]; });
+    renderRemPane(); renderList();
+    if (elOv.classList.contains("on") && CURRENT && MODE === "plan") openDetail(CURRENT.id);
+    tick();
+  }, err => console.error("[KẾ HOẠCH WIDGET] reminders:", err));
+
+  R.onValue(R.ref(db, NODE_CLREM), snap => {
+    CLREMS = snap.val() || {};
+    Object.keys(CLREMS).forEach(p => { if (!CLREMS[p] || typeof CLREMS[p] !== "object") delete CLREMS[p]; });
+    renderRemPane(); renderCL();
+    if (elOv.classList.contains("on") && CURRENT && MODE === "cl") openChecklistDetail(CURRENT.id);
+    tick();
+  }, err => console.error("[CHECKLIST WIDGET] reminders:", err));
+
+  setInterval(tick, TICK_MS);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
+
+  console.log("%c[IDECO] Widget KẾ HOẠCH TUẦN đã sẵn sàng.", "color:#7c3aed;font-weight:bold");
+})();
+
+</script><script type="module">
+const status=document.getElementById('status'),select=document.getElementById('employee');
+select.innerHTML='<option value="">Xem / chọn nhân viên trong bảng kế hoạch phía trên</option>';
+document.getElementById('enablePush').disabled=true;
+document.getElementById('enablePush').textContent='Thông báo nền cần cấu hình thêm';
+status.textContent='Bản HTML một file: nhắc khi trang đang mở. Đóng trình duyệt sẽ không có nhắc đúng giờ.';
+document.getElementById('testLocal').onclick=async()=>{
+if(!('Notification' in window)){status.textContent='Thiết bị không hỗ trợ thông báo trình duyệt ở chế độ này.';return;}
+try{const permission=await Notification.requestPermission();if(permission==='granted'){
+new Notification('🔔 IDECO – Kiểm tra thông báo',{body:'Thông báo thử khi ứng dụng đang mở.'});status.textContent='Đã thử thông báo. Không đồng nghĩa với nhắc khi ứng dụng đóng.';
+}else status.textContent='Chưa cấp quyền thông báo.';
+}catch(e){status.textContent='Không thể thử thông báo: '+e.message;}
+};
+</script><script>
+document.getElementById('openWidget').onclick=()=>{let r=document.querySelector('[data-ideco-kehoach-widget]')?.shadowRoot;if(!r){alert('Đang tải kế hoạch hoặc Firebase chưa kết nối.');return;}let b=r.querySelector('.fab');if(b)b.click();};
+let ua=navigator.userAgent;document.getElementById(/iPad|iPhone|iPod/.test(ua)?'guideIOS':'guideAndroid').style.display='block';
+</script></body></html>
